@@ -2,9 +2,21 @@
 // https://deno.land/manual/getting_started/setup_your_environment
 // This enables autocomplete, go to definition, etc.
 
-import { serve } from 'https://deno.land/std@0.131.0/http/server.ts';
-// import { Expo } from 'https://esm.sh/expo-server-sdk@3.7.0';
-const expo_access_token = Deno.env.get("EXPO_ACCESS_TOKEN") || "";
+import { serve } from 'https://deno.land/std@0.170.0/http/server.ts';
+// import { Expo } from "https://esm.sh/expo-server-sdk@3.7.0?target=deno&no-check";
+// import { Expo } from 'https://esm.sh/expo-server-sdk@3.7.0?target=deno&no-check';
+
+import {
+  createClient,
+  SupabaseClient,
+} from "https://esm.sh/@supabase/supabase-js@2.2.0";
+
+const expo_access_token = Deno.env.get('EXPO_ACCESS_TOKEN') || '';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey',
+};
 
 console.log('Hello from Functions!, God enock');
 
@@ -14,61 +26,110 @@ console.log('Hello from Functions!, God enock');
   img: 
 */
 
-serve((req: Request) => {
- 
+async function getPushToken(supabaseClient: SupabaseClient, parentId: string) {
+  //get user pushtoken
+
+  const { data: user, error } = await supabaseClient
+    .from('users')
+    .select('push_id')
+    .eq('uid', parentId).single();
+  if (error) throw error;
+  return user;
+}
+
+serve(async (req: Request) => {
+  const { record } = await req.json();
   // const expo = new Expo({ accessToken: expo_access_token });
   // Create the messages that you want to send to clients
-  // let messages = [];
-  // for (let pushToken of somePushTokens) {
-  //   // Each push token looks like ExponentPushToken[xxxxxxxxxxxxxxxxxxxxxx]
-
+  // const sendPushNotification =  (expoPushToken: string) => {
   //   // Check that all your push tokens appear to be valid Expo push tokens
-  //   if (!Expo.isExpoPushToken(pushToken)) {
-  //     console.error(`Push token ${pushToken} is not a valid Expo push token`);
-  //     continue;
+  //   if (!Expo.isExpoPushToken(expoPushToken)) {
+  //     console.error(`expo-push-token is not a valid Expo push token`);
   //   }
+  //   const messages = [];
+  //   const message = {
+  //     to: expoPushToken,
+  //     data: { extraData: 'Some data' },
+  //     title: 'Hi Enock, Sent by backend server',
+  //     body: 'This push notification was sent by a backend server!',
+  //   };
+  //   messages.push(message);
+  //   const chunks = expo.chunkPushNotifications(messages);
+  //   const tickets = [];
 
-  //   // Construct a message (see https://docs.expo.io/push-notifications/sending-notifications/)
-  //   messages.push({
-  //     to: pushToken,
-  //     sound: 'default',
-  //     body: 'This is a test notification',
-  //     data: { withSome: 'data' },
-  //   });
-  // }
-
-  // let chunks = expo.chunkPushNotifications(messages);
-  // let tickets = [];
-  // (async () => {
-  //   // Send the chunks to the Expo push notification service. There are
-  //   // different strategies you could use. A simple one is to send one chunk at a
-  //   // time, which nicely spreads the load out over time:
-  //   for (let chunk of chunks) {
-  //     try {
-  //       let ticketChunk = await expo.sendPushNotificationsAsync(chunk);
-  //       console.log(ticketChunk);
-  //       tickets.push(...ticketChunk);
-  //       // NOTE: If a ticket contains an error code in ticket.details.error, you
-  //       // must handle it appropriately. The error codes are listed in the Expo
-  //       // documentation:
-  //       // https://docs.expo.io/push-notifications/sending-notifications/#individual-errors
-  //     } catch (error) {
-  //       console.error(error);
-  //     }
+  //   try {
+  //     (async () => {
+  //       for (const chunk of chunks) {
+  //         try {
+  //           const ticketChunk = await expo.sendPushNotificationsAsync(chunk);
+  //           tickets.push(...ticketChunk);
+  //         } catch (error) {
+  //           console.error(error);
+  //         }
+  //       }
+  //     })();
+  //   } catch (error) {
+  //     console.error(error);
   //   }
-  // })();
+  // };
 
-  const data = {
-    message: `notifications sent ${expo_access_token}`,
-  };
+  async function sendPushNotification(expoPushToken: string) {
+    const message = {
+      to: expoPushToken,
+      sound: 'default',
+      title: 'THIS IS TITLE',
+      body: 'YO ENOCK, whats up',
+      data: { someData: 'goes here' },
+    };
+  
+    await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Accept-encoding': 'gzip, deflate',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(message),
+    });
+  }
 
-  return new Response(JSON.stringify(data), {
-    headers: { 'Content-Type': 'application/json' },
-  });
+  
+
+  
+
+  try {
+    const supabaseClient = createClient(
+      // Supabase API URL - env var exported by default.
+      Deno.env.get('SUPABASE_URL') ?? '',
+      // Supabase API ANON KEY - env var exported by default.
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      // Create client with Auth context of the user that called the function.
+      // This way your row-level-security (RLS) policies are applied.
+      {
+        global: {
+          headers: { Authorization: req.headers.get('Authorization')! },
+        },
+      },
+    );
+    
+    const {push_id} = await getPushToken(supabaseClient,record.parent_id);
+    await sendPushNotification(push_id)
+
+    const data = {
+      message: `sent: ${record.parent_id}`,
+    };
+    console.log(data);
+    return  new Response(JSON.stringify(data), {
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch (error) {
+    const data = {
+      message: `message failed:${error.message}`,
+    };
+
+    return new Response(JSON.stringify(data), {
+      headers: { ...corsHeaders,'Content-Type': 'application/json' },
+    });
+  }
 });
 
-// To invoke:
-// curl -i --location --request POST 'http://localhost:54321/functions/v1/' \
-//   --header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0' \
-//   --header 'Content-Type: application/json' \
-//   --data '{"name":"Functions"}'
